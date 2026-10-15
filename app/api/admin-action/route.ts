@@ -4,6 +4,17 @@ import { postToChannel, deleteFromChannel } from '@/lib/telegram'
 import { formatShortTrace } from '@/lib/utils'
 import { requireAdmin } from '@/lib/auth'
 
+type Confession = {
+  id: string
+  content: string
+  category: string
+  trace_code: string
+  status: string
+  show_time: boolean
+  created_at: string
+  telegram_message_id: number | null
+}
+
 function formatPublicMessage(
   content: string,
   category: string,
@@ -17,6 +28,7 @@ function formatPublicMessage(
 
   if (showTime) {
     const d = new Date(createdAt)
+
     const formatted =
       d.toLocaleString('en-GB', {
         timeZone: 'Asia/Kolkata',
@@ -34,17 +46,6 @@ function formatPublicMessage(
   return msg
 }
 
-type Confession = {
-  id: string
-  content: string
-  category: string
-  trace_code: string
-  status: string
-  show_time: boolean
-  created_at: string
-  telegram_message_id: number | null
-}
-
 export async function POST(req: NextRequest) {
   try {
     await requireAdmin()
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest) {
 
     console.log(`[admin-action] ${action} request for id=${id}`)
 
-    const supabaseAdmin = getSupabaseAdmin()
+    const supabaseAdmin: any = getSupabaseAdmin()
 
     const { data, error } = await supabaseAdmin
       .from('confessions')
@@ -85,8 +86,6 @@ export async function POST(req: NextRequest) {
 
     if (action === 'approve') {
       if (confession.status === 'approved') {
-        console.log('[admin-action] already approved')
-
         return NextResponse.json({
           message: 'Already approved',
           already: true,
@@ -101,15 +100,9 @@ export async function POST(req: NextRequest) {
         confession.created_at
       )
 
-      console.log('[admin-action] Attempting postToChannel...')
-
       const message_id = await postToChannel(message)
 
       if (!message_id) {
-        console.error(
-          '[admin-action] postToChannel returned null - will still approve in DB to avoid pending stuck'
-        )
-
         const { error: updateError } = await supabaseAdmin
           .from('confessions')
           .update({
@@ -120,8 +113,6 @@ export async function POST(req: NextRequest) {
           .eq('id', id)
 
         if (updateError) {
-          console.error('Supabase update failed:', updateError)
-
           return NextResponse.json(
             {
               error: `Telegram failed and DB update failed: ${updateError.message}`,
@@ -132,7 +123,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({
           message:
-            'Approved in DB but Telegram post failed - check PUBLIC_CHANNEL_ID and bot is admin in channel',
+            'Approved in DB but Telegram failed',
           warning: true,
           message_id: null,
         })
@@ -148,11 +139,9 @@ export async function POST(req: NextRequest) {
         .eq('id', id)
 
       if (updateError) {
-        console.error('Supabase update failed:', updateError)
-
         return NextResponse.json(
           {
-            error: `Telegram posted (${message_id}) but Supabase update failed: ${updateError.message}`,
+            error: `Telegram posted but DB update failed: ${updateError.message}`,
           },
           { status: 500 }
         )
@@ -167,7 +156,9 @@ export async function POST(req: NextRequest) {
     if (action === 'reject') {
       const { error: updateError } = await supabaseAdmin
         .from('confessions')
-        .update({ status: 'rejected' })
+        .update({
+          status: 'rejected',
+        })
         .eq('id', id)
 
       if (updateError) {
@@ -177,7 +168,9 @@ export async function POST(req: NextRequest) {
         )
       }
 
-      return NextResponse.json({ message: 'Rejected' })
+      return NextResponse.json({
+        message: 'Rejected',
+      })
     }
 
     if (action === 'delete') {
@@ -197,7 +190,9 @@ export async function POST(req: NextRequest) {
         )
       }
 
-      return NextResponse.json({ message: 'Deleted' })
+      return NextResponse.json({
+        message: 'Deleted',
+      })
     }
 
     return NextResponse.json(
@@ -207,16 +202,4 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error('admin-action error', e)
 
-    if (e?.message?.includes('Unauthorized')) {
-      return NextResponse.json(
-        { error: 'Unauthorized - login via admin route' },
-        { status: 401 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: e?.message || 'Internal error' },
-      { status: 500 }
-    )
-  }
-}
+    if (e?.message
